@@ -1,0 +1,10 @@
+- __tmp_... vars should be declared before use.
+       --> change failable_funcs to contain name AND return type. return type can then later be used to declare tmp vars.
+- enumeration suffix of tmp vars should be tracked within currect context/compound_statement
+       --> seems to work
+- or_on_error shoould be implemented.
+       --> started implementig. currently fails when trying to use
+
+
+- in declaration rule: save current type, so it's available later call expression in the init_declarator_list
+- use sample_output.c as what the output should look like

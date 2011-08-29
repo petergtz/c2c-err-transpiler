@@ -1,0 +1,679 @@
+%{
+#include <stdio.h>
+#include <string.h>
+#include <string>
+#include <list>
+#include <set>
+#include <map>
+#include <iostream>
+#include <algorithm>
+#include <boost/foreach.hpp>
+#include <boost/lexical_cast.hpp>
+using boost::lexical_cast;
+void yyerror(const char *str);
+//#define YYSTYPE char*
+extern "C" {
+    int yyparse(void);
+//    int yylex(void);  
+    int yywrap();
+    extern int column;
+    extern int line;
+}
+
+int yylex(void);  
+
+using namespace std;
+map<string, string> failable_funcs; // func_name -> return type
+list<string> structs;
+int suffix_index_decl;
+int suffix_index_use;
+list<string> vars_in_current_scope;
+
+char* strdup(const string& s) { return strdup(s.c_str()); }
+
+char* join_strdup(const string& a, const string& b) { return strdup(a+b); }
+char* join_strdup(const string& a, const string& b, const string& c) { return strdup(a+b+c); }
+char* join_strdup(const string& a, const string& b, const string& c, const string& d) { return strdup(a+b+c+d); }
+char* join_strdup(const string& a, const string& b, const string& c, const string& d, const string& e) { return strdup(a+b+c+d+e); }
+char* join_strdup(const string& a, const string& b, const string& c, const string& d, const string& e, string const& f) { return strdup(a+b+c+d+e+f); }
+
+#include "structs.h"
+
+list<CallExpression> call_expressions;
+%}
+
+%union {
+    char* str;
+    FailSpecifier *fail_specifier;
+    DeclarationSpecifiers* decl_specifiers;
+    FunctionDeclarator* function_declarator;
+    DirectFunctionDeclarator* direct_function_declarator;
+    Pointer* pointer;
+}
+
+%expect 1
+
+%token <str> CAN_FAIL FAILS_WITH OR_ON_ERROR
+
+%token <str> IDENTIFIER CONSTANT STRING_LITERAL SIZEOF
+%token <str> PTR_OP INC_OP DEC_OP LEFT_OP RIGHT_OP LE_OP GE_OP EQ_OP NE_OP
+%token <str> AND_OP OR_OP MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN
+%token <str> SUB_ASSIGN LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN
+%token <str> XOR_ASSIGN OR_ASSIGN TYPE_NAME
+
+%token <str> TYPEDEF EXTERN STATIC AUTO REGISTER INLINE RESTRICT
+%token <str> CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE CONST VOLATILE VOID
+%token <str> BOOL COMPLEX IMAGINARY
+%token <str> STRUCT UNION ENUM ELLIPSIS
+
+%token <str> CASE DEFAULT IF ELSE SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN
+
+%type <str> primary_expression postfix_expression argument_expression_list unary_expression unary_operator cast_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression and_expression exclusive_or_expression inclusive_or_expression logical_and_expression logical_or_expression conditional_expression assignment_expression assignment_operator expression constant_expression declaration  storage_class_specifier type_specifier struct_or_union_specifier struct_or_union struct_declaration_list struct_declaration specifier_qualifier_list struct_declarator_list struct_declarator enum_specifier enumerator_list enumerator type_qualifier function_specifier type_qualifier_list parameter_type_list parameter_list parameter_declaration identifier_list type_name abstract_declarator direct_abstract_declarator initializer initializer_list designation designator_list designator statement labeled_statement compound_statement block_item_list block_item expression_statement selection_statement iteration_statement jump_statement translation_unit external_declaration function_definition init_declarator init_declarator_list declarator
+
+%type <str> direct_declarator
+
+%type <fail_specifier> fail_specifier
+%type <decl_specifiers> declaration_specifiers
+%type <function_declarator> function_declarator
+%type <direct_function_declarator> direct_function_declarator
+%type <pointer> pointer
+
+%start translation_unit
+%%
+primary_expression
+	: IDENTIFIER
+	| CONSTANT
+	| STRING_LITERAL
+	| '(' expression ')' { $$ = join_strdup("(", $2, ")"); free($2); }
+	;
+
+postfix_expression
+	: primary_expression
+	| postfix_expression '[' expression ']'
+	| postfix_expression '(' ')'
+	| postfix_expression '(' argument_expression_list ')' {
+	    if(failable_funcs.find($1) == failable_funcs.end()) {
+    	    $$ = join_strdup($1, "(", $3, ")");
+	    } else {
+    	    $$ = join_strdup("__tmp_result_var_", lexical_cast<string>(suffix_index_decl));//join_strdup($1, "(", $3, " sdjfk ds)");
+    	    suffix_index_decl++;
+    	    call_expressions.push_back(CallExpression($1, $3));
+	    }
+	}
+	// new rule:
+	| postfix_expression '(' argument_expression_list ')' or_on_error statement {
+	    if(failable_funcs.find($1) == failable_funcs.end()) {
+    	    yyerror("or_on_error can only be used failable functions.");
+	    } else {
+    	    $$ = join_strdup("__tmp_result_var_", lexical_cast<string>(suffix_index_decl));//join_strdup($1, "(", $3, " sdjfk ds)");
+    	    suffix_index_decl++;
+    	    call_expressions.push_back(CallExpression($1, $3));
+	    }
+	}
+	| postfix_expression '.' IDENTIFIER
+	| postfix_expression PTR_OP IDENTIFIER
+	| postfix_expression INC_OP
+	| postfix_expression DEC_OP
+	| '(' type_name ')' '{' initializer_list '}' { $$ = join_strdup("(", $2, ") {", $5, "}"); free($2); free($5); }
+	| '(' type_name ')' '{' initializer_list ',' '}' { $$ = join_strdup("(", $2, ") {", $5, ", }"); free($2); free($5); }
+	;
+	
+// new non-terminal:
+or_on_error
+    : OR_ON_ERROR
+    ;
+
+argument_expression_list
+	: assignment_expression
+	| argument_expression_list ',' assignment_expression { $$ = join_strdup($1, ", ", $3); }
+	;
+
+unary_expression
+	: postfix_expression
+	| INC_OP unary_expression
+	| DEC_OP unary_expression
+	| unary_operator cast_expression
+	| SIZEOF unary_expression
+	| SIZEOF '(' type_name ')'
+	;
+
+unary_operator
+	: '&' { $$ = strdup("&"); }
+	| '*' { $$ = strdup("*"); }
+	| '+' { $$ = strdup("+"); }
+	| '-' { $$ = strdup("-"); }
+	| '~' { $$ = strdup("~"); }
+	| '!' { $$ = strdup("!"); }
+	;
+
+cast_expression
+	: unary_expression
+	| '(' type_name ')' cast_expression { $$ = join_strdup("(", $2, ")", $4); free($2); free($4); }
+	;
+
+multiplicative_expression
+	: cast_expression
+	| multiplicative_expression '*' cast_expression
+	| multiplicative_expression '/' cast_expression
+	| multiplicative_expression '%' cast_expression
+	;
+
+additive_expression
+	: multiplicative_expression
+	| additive_expression '+' multiplicative_expression
+	| additive_expression '-' multiplicative_expression
+	;
+
+shift_expression
+	: additive_expression
+	| shift_expression LEFT_OP additive_expression
+	| shift_expression RIGHT_OP additive_expression
+	;
+
+relational_expression
+	: shift_expression
+	| relational_expression '<' shift_expression
+	| relational_expression '>' shift_expression
+	| relational_expression LE_OP shift_expression
+	| relational_expression GE_OP shift_expression
+	;
+
+equality_expression
+	: relational_expression
+	| equality_expression EQ_OP relational_expression
+	| equality_expression NE_OP relational_expression
+	;
+
+and_expression
+	: equality_expression
+	| and_expression '&' equality_expression
+	;
+
+exclusive_or_expression
+	: and_expression
+	| exclusive_or_expression '^' and_expression
+	;
+
+inclusive_or_expression
+	: exclusive_or_expression
+	| inclusive_or_expression '|' exclusive_or_expression
+	;
+
+logical_and_expression
+	: inclusive_or_expression
+	| logical_and_expression AND_OP inclusive_or_expression
+	;
+
+logical_or_expression
+	: logical_and_expression
+	| logical_or_expression OR_OP logical_and_expression
+	;
+
+conditional_expression 
+	: logical_or_expression
+	| logical_or_expression '?' expression ':' conditional_expression
+	;
+
+assignment_expression
+	: conditional_expression
+	| unary_expression assignment_operator assignment_expression { $$ = join_strdup($1, $2, $3); }
+	;
+
+assignment_operator
+	: '=' { $$ = strdup("="); }
+	| MUL_ASSIGN
+	| DIV_ASSIGN
+	| MOD_ASSIGN
+	| ADD_ASSIGN
+	| SUB_ASSIGN
+	| LEFT_ASSIGN
+	| RIGHT_ASSIGN
+	| AND_ASSIGN
+	| XOR_ASSIGN
+	| OR_ASSIGN
+	;
+
+expression
+	: assignment_expression
+	| expression ',' assignment_expression
+	;
+
+constant_expression
+	: conditional_expression
+	;
+
+declaration
+	: declaration_specifiers ';' { $$ = join_strdup($1->full, ";\n"); delete $1; }
+	| declaration_specifiers init_declarator_list ';'  { $$ = join_strdup($1->full, " ", $2, ";\n"); delete $1; free($2); }
+// new rule:
+	| declaration_specifiers function_declarator fail_specifier ';' {
+	    if ($3->error_struct) {
+	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type, $3->error_struct), ";\n");
+	    } else {
+	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type), ";\n");
+	    }
+        failable_funcs[$2->direct_function_declarator->direct_declarator] = $1->type;
+	    delete $1; delete $2; delete $3;
+	}
+	;
+	
+// new non-terminal
+function_declarator
+    : direct_function_declarator { Pointer* p = new Pointer; p->num_pointers=0; $$ = new FunctionDeclarator($1, p); }
+    | pointer direct_function_declarator  { $$ = new FunctionDeclarator($2, $1); }
+    ;
+    
+// new non-terminal
+direct_function_declarator
+    : direct_declarator '(' ')' { $$ = new DirectFunctionDeclarator($1); }
+    | direct_declarator '(' parameter_type_list ')' { $$ = new DirectFunctionDeclarator($1, $3); }
+    ;
+// new non-terminal
+fail_specifier
+    : CAN_FAIL { $$ = new FailSpecifier(); }
+    | FAILS_WITH IDENTIFIER { 
+        // FIXME: check if error struct identifier is defined.
+        $$ = new FailSpecifier($2); 
+    }
+    ;
+
+declaration_specifiers
+	: storage_class_specifier { 
+	    $$ = new DeclarationSpecifiers;
+	    $$->full = $1; 
+	    $$->storage_class = $1; 
+	    free($1);
+	}
+	| storage_class_specifier declaration_specifiers {
+	    $$ = $2;
+	    $$->full = $1 + string(" ") + $2->full;
+	    $$->storage_class = $1 + string(" ") + $2->storage_class;
+	    free($1);
+	}
+	| type_specifier {
+	    $$ = new DeclarationSpecifiers;
+	    $$->type = $1;
+	    $$->full = $1;
+	    free($1);
+	}
+	| type_specifier declaration_specifiers {
+	    $$ = $2;
+	    $$->full = $1 + string(" ") + $2->full;
+	    $$->type = $1 + string(" ") + $2->type;
+	    free($1);
+	}
+	| type_qualifier {
+	    $$ = new DeclarationSpecifiers;
+	    $$->qualifier = $1;
+	    $$->full = $1;
+	    free($1);
+	}
+	| type_qualifier declaration_specifiers {
+	    $$ = $2;
+	    $$->full = $1 + string(" ") + $2->full;
+	    $$->qualifier = $1 + string(" ") + $2->qualifier;
+	    free($1);
+	}
+	| function_specifier {
+	    $$ = new DeclarationSpecifiers;
+	    $$->full = $1;
+	    $$->storage_class = $1;
+	    free($1);
+	}
+	| function_specifier declaration_specifiers {
+	    $$ = $2;
+	    $$->full = $1 + string(" ") + $$->full;
+	    $$->storage_class = $1 + string(" ") + $$->storage_class;
+	    free($1);
+	}
+	;
+
+init_declarator_list
+	: init_declarator
+	| init_declarator_list ',' init_declarator
+	;
+
+init_declarator
+	: declarator
+	| declarator '=' initializer { $$ = join_strdup($1, " = ", $3); }
+	;
+
+storage_class_specifier
+	: TYPEDEF { $$ = strdup("typedef"); }
+	| EXTERN { $$ = strdup("extern"); }
+	| STATIC { $$ = strdup("static"); }
+	| AUTO { $$ = strdup("auto"); }
+	| REGISTER { $$ = strdup("register"); }
+	;
+
+type_specifier
+	: VOID { $$ = strdup("void"); }
+	| CHAR { $$ = strdup("char"); }
+	| SHORT { $$ = strdup("short"); }
+	| INT { $$ = strdup("int"); }
+	| LONG { $$ = strdup("long"); }
+	| FLOAT{ $$ = strdup("float"); }
+	| DOUBLE { $$ = strdup("double"); }
+	| SIGNED { $$ = strdup("signed"); }
+	| UNSIGNED { $$ = strdup("unsigned"); }
+	| BOOL { $$ = strdup("_Bool"); }
+	| COMPLEX { $$ = strdup("_Complex"); }
+	| IMAGINARY { $$ = strdup("_Imaginary"); }
+	| struct_or_union_specifier
+	| enum_specifier
+	| TYPE_NAME // FIXME
+	;
+
+struct_or_union_specifier
+	: struct_or_union IDENTIFIER '{' struct_declaration_list '}' { $$ = join_strdup($1, " ", $2, "{\n", $4,"\n }"); }
+	| struct_or_union '{' struct_declaration_list '}'
+	| struct_or_union IDENTIFIER
+	;
+
+struct_or_union
+	: STRUCT { $$ = strdup("struct"); }
+	| UNION { $$ = strdup("union"); }
+	;
+
+struct_declaration_list
+	: struct_declaration
+	| struct_declaration_list struct_declaration { $$ = join_strdup($1, " ", $2); }
+	;
+
+struct_declaration
+	: specifier_qualifier_list struct_declarator_list ';' { $$ = join_strdup($1, " ", $2, ";"); }
+	;
+
+specifier_qualifier_list
+	: type_specifier specifier_qualifier_list
+	| type_specifier
+	| type_qualifier specifier_qualifier_list
+	| type_qualifier
+	;
+
+struct_declarator_list
+	: struct_declarator
+	| struct_declarator_list ',' struct_declarator { $$ = join_strdup($1, ", ", $3); }
+	;
+
+struct_declarator
+	: declarator
+	| ':' constant_expression { $$ = join_strdup(": ", $2); free($2); }
+	| declarator ':' constant_expression  { 
+	    $$ = join_strdup($1, ": ", $3); 
+	    free($1); free($3);
+	}
+	;
+
+enum_specifier
+	: ENUM '{' enumerator_list '}'
+	| ENUM IDENTIFIER '{' enumerator_list '}'
+	| ENUM '{' enumerator_list ',' '}'
+	| ENUM IDENTIFIER '{' enumerator_list ',' '}'
+	| ENUM IDENTIFIER
+	;
+
+enumerator_list
+	: enumerator
+	| enumerator_list ',' enumerator
+	;
+
+enumerator
+	: IDENTIFIER
+	| IDENTIFIER '=' constant_expression
+	;
+
+type_qualifier
+	: CONST { $$ = strdup("const"); }
+	| RESTRICT { $$ = strdup("restrict"); }
+	| VOLATILE { $$ = strdup("volatile"); }
+	;
+
+function_specifier
+	: INLINE { $$ = strdup("inline"); }
+	;
+
+declarator
+	: pointer direct_declarator {
+	    $$ = join_strdup($1->full, $2); delete $1; free($2);
+	}
+	| direct_declarator
+	;
+
+
+direct_declarator
+	: IDENTIFIER {
+	}
+	| '(' declarator ')' {
+	    $$ = join_strdup("'", $2, "'"); free($2);
+	}
+	| direct_declarator '[' type_qualifier_list assignment_expression ']'
+	| direct_declarator '[' type_qualifier_list ']'
+	| direct_declarator '[' assignment_expression ']'
+	| direct_declarator '[' STATIC type_qualifier_list assignment_expression ']'
+	| direct_declarator '[' type_qualifier_list STATIC assignment_expression ']'
+	| direct_declarator '[' type_qualifier_list '*' ']'
+	| direct_declarator '[' '*' ']'
+	| direct_declarator '[' ']'
+// moved function declarators to direct_function_declarator
+//	| direct_declarator '(' parameter_type_list ')'
+	| direct_declarator '(' identifier_list ')'
+//	| direct_declarator '(' ')'
+    | direct_function_declarator {
+       $$ = strdup($1->to_string());
+    }
+	;
+
+pointer
+	: '*' { $$ = new Pointer; $$->full = "*"; $$->num_pointers = 1; }
+	| '*' type_qualifier_list { $$ = new Pointer; $$->full = join_strdup("*", $2); $$->num_pointers = 1; }
+	| '*' pointer { $$ = $2; $$->full = " * " + $$->full; $$->num_pointers++; }
+	| '*' type_qualifier_list pointer  { $$ = $3; $$->full = join_strdup(" * ", $2, $$->full); $$->num_pointers++; }
+	;
+
+type_qualifier_list
+	: type_qualifier
+	| type_qualifier_list type_qualifier { $$ = join_strdup($1, " ", $2); }
+	;
+
+
+parameter_type_list
+	: parameter_list
+	| parameter_list ',' ELLIPSIS
+	;
+
+parameter_list
+	: parameter_declaration
+	| parameter_list ',' parameter_declaration { $$ = join_strdup($1, ", ", $3); }
+	;
+
+parameter_declaration
+	: declaration_specifiers declarator { $$ = join_strdup($1->full, " ", $2); }
+	| declaration_specifiers abstract_declarator { $$ = join_strdup($1->full, " ", $2); }
+	| declaration_specifiers { $$ = strdup($1->full); }
+	;
+
+identifier_list
+	: IDENTIFIER
+	| identifier_list ',' IDENTIFIER
+	;
+
+type_name
+	: specifier_qualifier_list
+	| specifier_qualifier_list abstract_declarator
+	;
+
+abstract_declarator
+	: pointer { $$ = strdup($1->full); }
+	| direct_abstract_declarator
+	| pointer direct_abstract_declarator { $$ = join_strdup($1->full, $2); }
+	;
+
+direct_abstract_declarator
+	: '(' abstract_declarator ')' { $$ = join_strdup("(", $2, ")"); free($2); }
+	| '[' ']' { $$ = strdup("[]"); }
+	| '[' assignment_expression ']' { $$ = join_strdup("[", $2, "]"); free($2); }
+	| direct_abstract_declarator '[' ']'
+	| direct_abstract_declarator '[' assignment_expression ']'
+	| '[' '*' ']' { $$ = strdup("[*]"); }
+	| direct_abstract_declarator '[' '*' ']'
+	| '(' ')' { $$ = strdup("()"); }
+	| '(' parameter_type_list ')' { $$ = join_strdup("(", $2, ")"); free($2); }
+	| direct_abstract_declarator '(' ')'
+	| direct_abstract_declarator '(' parameter_type_list ')'
+	;
+
+initializer
+	: assignment_expression
+	| '{' initializer_list '}' { $$ = join_strdup("{", $2, "}"); free($2); }
+	| '{' initializer_list ',' '}' { $$ = join_strdup("{", $2, ",}"); free($2); }
+	;
+
+initializer_list
+	: initializer
+	| designation initializer
+	| initializer_list ',' initializer
+	| initializer_list ',' designation initializer
+	;
+
+designation
+	: designator_list '='
+	;
+
+designator_list
+	: designator
+	| designator_list designator
+	;
+
+designator
+	: '[' constant_expression ']' { $$ = join_strdup("[", $2, "]"); free($2); }
+	| '.' IDENTIFIER { $$ = join_strdup(".", $2); free($2); }
+	;
+
+statement
+	: labeled_statement
+	| compound_statement
+	| expression_statement
+	| selection_statement
+	| iteration_statement
+	| jump_statement
+	;
+
+labeled_statement
+	: IDENTIFIER ':' statement
+	| CASE constant_expression ':' statement
+	| DEFAULT ':' statement
+	;
+
+compound_statement
+	: '{' '}' { $$ = strdup("{}"); }
+	| '{' block_item_list '}' {
+	    suffix_index_decl = 0;
+	    suffix_index_use = 0;
+	    $$ = join_strdup("{\n", $2, "}"); free($2); 
+	}
+	;
+
+block_item_list
+	: block_item
+	| block_item_list block_item { $$ = join_strdup($1, $2); }
+	;
+
+block_item
+	: declaration
+	| statement
+	;
+
+expression_statement
+	: ';' { $$ = strdup(";"); }
+	| expression ';' {
+	    string result;
+//	    for (list<CallExpression>::iterator it=call_expressions.begin(); it != call_expressions.end(); ++it) {
+	    BOOST_FOREACH(CallExpression call_expression, call_expressions) {
+	        string tmp_result_var = "__tmp_result_var_" + lexical_cast<string>(suffix_index_use);
+	        string tmp_rc_var = "__tmp_rc_var_" + lexical_cast<string>(suffix_index_use);
+	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
+	               + "int " + tmp_rc_var + " = "
+	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
+	               + "if (" + tmp_rc_var + " != 0) {\n} else {\n";
+	        suffix_index_use++;
+	    }
+	    result += join_strdup($1, ";\n");
+	    for (int i = 0; i < call_expressions.size(); i++) {
+	        result += "}\n";
+	    }
+	    call_expressions.clear(); // is clear the correct call to remove all elements?
+	    $$ = strdup(result.c_str());
+	}
+	;
+
+selection_statement
+	: IF '(' expression ')' statement
+	| IF '(' expression ')' statement ELSE statement
+	| SWITCH '(' expression ')' statement
+	;
+
+iteration_statement
+	: WHILE '(' expression ')' statement
+	| DO statement WHILE '(' expression ')' ';'
+	| FOR '(' expression_statement expression_statement ')' statement
+	| FOR '(' expression_statement expression_statement expression ')' statement
+	| FOR '(' declaration expression_statement ')' statement
+	| FOR '(' declaration expression_statement expression ')' statement
+	;
+
+jump_statement
+	: GOTO IDENTIFIER ';'
+	| CONTINUE ';'
+	| BREAK ';'
+	| RETURN ';'
+	| RETURN expression ';'
+	;
+
+translation_unit
+	: external_declaration { printf("%s\n", $1); }
+	| translation_unit external_declaration  { printf("%s\n", $2); }
+	;
+
+external_declaration
+	: function_definition
+	| declaration
+	;
+
+//FIXME: excluded old function declaration style
+function_definition
+//	: declaration_specifiers declarator declaration_list compound_statement
+	: declaration_specifiers declarator compound_statement {
+	    $$ = join_strdup($1->full, " ", $2, $3);
+	}
+// new rule:
+	| declaration_specifiers function_declarator fail_specifier compound_statement { 
+	    if ($3->error_struct) {
+	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type, $3->error_struct), $4);
+	    } else {
+	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type),  $4);
+	    }
+        failable_funcs[$2->direct_function_declarator->direct_declarator] = $1->type;
+	    delete $1; delete $2; delete $3; free($4);
+	}
+	;
+
+/*declaration_list
+	: declaration
+	| declaration_list declaration
+	;*/
+    
+%%
+
+void yyerror(const char *str)
+{
+        fprintf(stderr, "error: %s. line: %i, col: %i\n", str, line, column);
+}
+
+
+int main() 
+{
+//    yydebug = 1;
+    yyparse();
+//    BOOST_FOREACH(string failable_func, failable_funcs) cout << failable_func << endl;
+}
