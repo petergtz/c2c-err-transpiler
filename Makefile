@@ -2,6 +2,16 @@ CXXFLAGS = -g -I /usr/include/c++/4.5 -I /usr/include/c++/4.5/x86_64-linux-gnu
 CFLAGS = -g
 CXX = clang++
 
+full: test
+
+test: build
+	@echo "Running test cases..."
+#	@./run_test.sh test_data/test_input1.c test_data/expected_output1.c
+	@./run_test.sh test_data/test_input3.c test_data/expected_output3.c
+	@echo "Done"
+
+build: c2c
+	
 c2c: lex.yy.o c2c.tab.o
 	$(CXX) -g lex.yy.o c2c.tab.o -o c2c
 	

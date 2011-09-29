@@ -26,10 +26,12 @@ struct DirectFunctionDeclarator {
 
     string to_string() 
         { return direct_declarator + "(" + parameter_type_list + ")"; }
+        
     string to_string(string const& return_type) 
-        { return direct_declarator + "(" + parameter_type_list + ", " + return_type + "*)"; }
+        { return direct_declarator + "(" + parameter_type_list + ", " + return_type + "* __this_result)"; }
+        
     string to_string(string const& return_type, string const& error_type) 
-        { return direct_declarator + "(" + parameter_type_list + ", " + return_type + "*, " + error_type + "*)"; }
+        { return direct_declarator + "(" + parameter_type_list + ", " + return_type + "* __this_result, " + error_type + "*)"; }
 };
 
 struct Pointer {
@@ -47,18 +49,27 @@ struct FunctionDeclarator {
 
     string to_string() 
         { return direct_function_declarator->to_string(); }
+        
     string to_string(string const& return_type)  
-        { return direct_function_declarator->to_string(return_type+string(pointer->num_pointers, '*')); }
+        { return direct_function_declarator->to_string(return_type + string(pointer->num_pointers, '*')); }
+        
     string to_string(string const& return_type, string const& error_type) 
-        { return direct_function_declarator->to_string(return_type+string(pointer->num_pointers, '*'), error_type); }
+        { return direct_function_declarator->to_string(return_type + string(pointer->num_pointers, '*'), error_type); }
 };
 
 struct CallExpression {
-    CallExpression(string const& postfix_expression, string const& argument_expression_list)
+    CallExpression(string const& postfix_expression, 
+                   string const& argument_expression_list, 
+                   string const& or_on_error_expression = "",
+                   string const& jump_statement = "")
     : postfix_expression(postfix_expression)
-    , argument_expression_list(argument_expression_list) {}
+    , argument_expression_list(argument_expression_list)
+    , or_on_error_expression(or_on_error_expression)
+    , jump_statement(jump_statement) {}
     
     string postfix_expression;
     string argument_expression_list;
+    string or_on_error_expression;
+    string jump_statement;
 };
 

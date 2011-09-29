@@ -37,6 +37,9 @@ char* join_strdup(const string& a, const string& b, const string& c, const strin
 char* join_strdup(const string& a, const string& b, const string& c, const string& d, const string& e) { return strdup(a+b+c+d+e); }
 char* join_strdup(const string& a, const string& b, const string& c, const string& d, const string& e, string const& f) { return strdup(a+b+c+d+e+f); }
 
+template<class T>
+string str(T t) { return lexical_cast<string>(t); }
+
 #include "structs.h"
 
 list<CallExpression> call_expressions;
@@ -51,7 +54,7 @@ list<CallExpression> call_expressions;
     Pointer* pointer;
 }
 
-%expect 1
+%expect 77
 
 %token <str> CAN_FAIL FAILS_WITH OR_ON_ERROR
 
@@ -68,7 +71,7 @@ list<CallExpression> call_expressions;
 
 %token <str> CASE DEFAULT IF ELSE SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN
 
-%type <str> primary_expression postfix_expression argument_expression_list unary_expression unary_operator cast_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression and_expression exclusive_or_expression inclusive_or_expression logical_and_expression logical_or_expression conditional_expression assignment_expression assignment_operator expression constant_expression declaration  storage_class_specifier type_specifier struct_or_union_specifier struct_or_union struct_declaration_list struct_declaration specifier_qualifier_list struct_declarator_list struct_declarator enum_specifier enumerator_list enumerator type_qualifier function_specifier type_qualifier_list parameter_type_list parameter_list parameter_declaration identifier_list type_name abstract_declarator direct_abstract_declarator initializer initializer_list designation designator_list designator statement labeled_statement compound_statement block_item_list block_item expression_statement selection_statement iteration_statement jump_statement translation_unit external_declaration function_definition init_declarator init_declarator_list declarator
+%type <str> primary_expression postfix_expression argument_expression_list unary_expression unary_operator cast_expression multiplicative_expression additive_expression shift_expression relational_expression equality_expression and_expression exclusive_or_expression inclusive_or_expression logical_and_expression logical_or_expression conditional_expression assignment_expression assignment_operator expression constant_expression declaration  storage_class_specifier type_specifier struct_or_union_specifier struct_or_union struct_declaration_list struct_declaration specifier_qualifier_list struct_declarator_list struct_declarator enum_specifier enumerator_list enumerator type_qualifier function_specifier type_qualifier_list parameter_type_list parameter_list parameter_declaration identifier_list type_name abstract_declarator direct_abstract_declarator initializer initializer_list designation designator_list designator statement labeled_statement compound_statement block_item_list block_item expression_statement selection_statement iteration_statement jump_statement jump translation_unit external_declaration function_definition init_declarator init_declarator_list declarator
 
 %type <str> direct_declarator
 
@@ -95,19 +98,39 @@ postfix_expression
 	    if(failable_funcs.find($1) == failable_funcs.end()) {
     	    $$ = join_strdup($1, "(", $3, ")");
 	    } else {
-    	    $$ = join_strdup("__tmp_result_var_", lexical_cast<string>(suffix_index_decl));//join_strdup($1, "(", $3, " sdjfk ds)");
+    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
     	    suffix_index_decl++;
     	    call_expressions.push_back(CallExpression($1, $3));
 	    }
 	}
 	// new rule:
-	| postfix_expression '(' argument_expression_list ')' or_on_error statement {
+	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR compound_statement {
 	    if(failable_funcs.find($1) == failable_funcs.end()) {
     	    yyerror("or_on_error can only be used failable functions.");
 	    } else {
-    	    $$ = join_strdup("__tmp_result_var_", lexical_cast<string>(suffix_index_decl));//join_strdup($1, "(", $3, " sdjfk ds)");
+    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
     	    suffix_index_decl++;
     	    call_expressions.push_back(CallExpression($1, $3));
+	    }
+	}
+	// new rule:
+	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR assignment_expression {
+	    if(failable_funcs.find($1) == failable_funcs.end()) {
+    	    yyerror("or_on_error can only be used failable functions.");
+	    } else {
+    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
+    	    suffix_index_decl++;
+    	    call_expressions.push_back(CallExpression($1, $3, $6));
+	    }
+	}
+	// new rule:
+	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR jump {
+	    if(failable_funcs.find($1) == failable_funcs.end()) {
+    	    yyerror("or_on_error can only be used failable functions.");
+	    } else {
+    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
+    	    suffix_index_decl++;
+    	    call_expressions.push_back(CallExpression($1, $3, "", $6));
 	    }
 	}
 	| postfix_expression '.' IDENTIFIER
@@ -118,11 +141,6 @@ postfix_expression
 	| '(' type_name ')' '{' initializer_list ',' '}' { $$ = join_strdup("(", $2, ") {", $5, ", }"); free($2); free($5); }
 	;
 	
-// new non-terminal:
-or_on_error
-    : OR_ON_ERROR
-    ;
-
 argument_expression_list
 	: assignment_expression
 	| argument_expression_list ',' assignment_expression { $$ = join_strdup($1, ", ", $3); }
@@ -216,7 +234,7 @@ conditional_expression
 
 assignment_expression
 	: conditional_expression
-	| unary_expression assignment_operator assignment_expression { $$ = join_strdup($1, $2, $3); }
+	| unary_expression assignment_operator assignment_expression { $$ = join_strdup($1, " ", $2, " ", $3); }
 	;
 
 assignment_operator
@@ -248,7 +266,7 @@ declaration
 // new rule:
 	| declaration_specifiers function_declarator fail_specifier ';' {
 	    if ($3->error_struct) {
-	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type, $3->error_struct), ";\n");
+	        $$ = join_strdup($1->storage_class, $3->error_struct, "* ", $2->to_string($1->type), ";\n");
 	    } else {
 	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type), ";\n");
 	    }
@@ -406,21 +424,21 @@ struct_declarator
 	;
 
 enum_specifier
-	: ENUM '{' enumerator_list '}'
-	| ENUM IDENTIFIER '{' enumerator_list '}'
-	| ENUM '{' enumerator_list ',' '}'
-	| ENUM IDENTIFIER '{' enumerator_list ',' '}'
-	| ENUM IDENTIFIER
+	: ENUM '{' enumerator_list '}' { $$ = join_strdup("enum {\n", $3, ",\n}"); }
+	| ENUM IDENTIFIER '{' enumerator_list '}'  { $$ = join_strdup("enum ", $2,"{\n", $4, "\n}"); }
+	| ENUM '{' enumerator_list ',' '}' { $$ = join_strdup("enum {\n", $3, ",\n}"); }
+	| ENUM IDENTIFIER '{' enumerator_list ',' '}' { $$ = join_strdup("enum ", $2,"{\n", $4, ",\n}"); }
+	| ENUM IDENTIFIER { $$ = join_strdup("enum ", $2); }
 	;
 
 enumerator_list
 	: enumerator
-	| enumerator_list ',' enumerator
+	| enumerator_list ',' enumerator  { $$ = join_strdup($1, ", ", $3); }
 	;
 
 enumerator
 	: IDENTIFIER
-	| IDENTIFIER '=' constant_expression
+	| IDENTIFIER '=' constant_expression  { $$ = join_strdup($1, " = ", $3); }
 	;
 
 type_qualifier
@@ -558,7 +576,7 @@ statement
 	| iteration_statement
 	| jump_statement
 	;
-
+	
 labeled_statement
 	: IDENTIFIER ':' statement
 	| CASE constant_expression ':' statement
@@ -595,14 +613,21 @@ expression_statement
 	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
 	               + "int " + tmp_rc_var + " = "
 	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
-	               + "if (" + tmp_rc_var + " != 0) {\n} else {\n";
+	               + "if (" + tmp_rc_var + " != 0) {\n";
+	        if (call_expression.or_on_error_expression != "") {
+	            result += tmp_result_var + " = " + call_expression.or_on_error_expression + ";";
+	        }
+	        if (call_expression.jump_statement != "") {
+	            result += call_expression.jump_statement + ";";
+	        }
+	        result += "}\n";
 	        suffix_index_use++;
 	    }
 	    result += join_strdup($1, ";\n");
-	    for (int i = 0; i < call_expressions.size(); i++) {
-	        result += "}\n";
-	    }
-	    call_expressions.clear(); // is clear the correct call to remove all elements?
+//	    for (int i = 0; i < call_expressions.size(); i++) {
+//	        result += "}\n";
+//	    }
+	    call_expressions.clear();
 	    $$ = strdup(result.c_str());
 	}
 	;
@@ -622,12 +647,18 @@ iteration_statement
 	| FOR '(' declaration expression_statement expression ')' statement
 	;
 
+// broke up into jump_statement and jump symbol
 jump_statement
-	: GOTO IDENTIFIER ';'
-	| CONTINUE ';'
-	| BREAK ';'
-	| RETURN ';'
-	| RETURN expression ';'
+	: jump ';' { $$ = join_strdup($1, ";\n"); }
+	;
+
+
+jump
+	: GOTO IDENTIFIER { $$ = join_strdup("goto ", $2); }
+	| CONTINUE { $$ = strdup("continue"); }
+	| BREAK { $$ = strdup("break"); }
+	| RETURN { $$ = strdup("return"); }
+	| RETURN expression  { $$ = join_strdup("return ", $2); }
 	;
 
 translation_unit
@@ -649,7 +680,7 @@ function_definition
 // new rule:
 	| declaration_specifiers function_declarator fail_specifier compound_statement { 
 	    if ($3->error_struct) {
-	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type, $3->error_struct), $4);
+	        $$ = join_strdup($1->storage_class, $3->error_struct, "* ", $2->to_string($1->type), $4);
 	    } else {
 	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type),  $4);
 	    }
