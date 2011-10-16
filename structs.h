@@ -61,18 +61,19 @@ struct Jump;
 
 struct CallExpression {
     CallExpression(string const& postfix_expression, 
-                   string const& argument_expression_list, 
+                   string const& argument_expression_list/*, 
                    string const& or_on_error_expression = "",
-                   Jump* or_on_error_jump = 0)
+                   Jump* or_on_error_jump = 0*/)
     : postfix_expression(postfix_expression)
     , argument_expression_list(argument_expression_list)
-    , or_on_error_expression(or_on_error_expression)
-    , or_on_error_jump(or_on_error_jump) {}
+//    , or_on_error_expression(or_on_error_expression)
+//    , or_on_error_jump(or_on_error_jump) 
+    {}
     
     string postfix_expression;
     string argument_expression_list;
-    string or_on_error_expression;
-    Jump* or_on_error_jump;
+//    string or_on_error_expression;
+//    Jump* or_on_error_jump;
 };
 
 struct Jump {

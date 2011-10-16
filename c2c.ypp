@@ -56,7 +56,7 @@ string current_fails_with_type;
     Jump* jump;
 }
 
-%expect 78
+%expect 29
 
 %token <str> CAN_FAIL FAILS_WITH OR_ON_ERROR
 
@@ -104,26 +104,6 @@ postfix_expression
     	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
     	    suffix_index_decl++;
     	    call_expressions.push_back(CallExpression($1, $3));
-	    }
-	}
-	// new rule:
-	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR assignment_expression {
-	    if(failable_funcs.find($1) == failable_funcs.end()) {
-    	    yyerror("or_on_error can only be used failable functions.");
-	    } else {
-    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
-    	    suffix_index_decl++;
-    	    call_expressions.push_back(CallExpression($1, $3, $6));
-	    }
-	}
-	// new rule:
-	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR jump {
-	    if(failable_funcs.find($1) == failable_funcs.end()) {
-    	    yyerror("or_on_error can only be used failable functions.");
-	    } else {
-    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
-    	    suffix_index_decl++;
-    	    call_expressions.push_back(CallExpression($1, $3, "", $6));
 	    }
 	}
 	| postfix_expression '.' IDENTIFIER
@@ -605,32 +585,50 @@ expression_statement
 	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
 	               + "int " + tmp_rc_var + " = "
 	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
-	               + "if (" + tmp_rc_var + " != 0) {\n";
-	        if (call_expression.or_on_error_expression != "") {
-	            result += tmp_result_var + " = " + call_expression.or_on_error_expression + ";";
-	        }
-	        if (call_expression.or_on_error_jump != 0) {
-	            result += call_expression.or_on_error_jump->eval() + ";";
-	        }
-	        result += "}\n";
+	               + "if (" + tmp_rc_var + " != 0) {\n"
+                   + "}\n";
 	        suffix_index_use++;
 	    }
 	    result += join_strdup($1, ";\n");
-//	    for (int i = 0; i < call_expressions.size(); i++) {
-//	        result += "}\n";
-//	    }
 	    call_expressions.clear();
 	    $$ = strdup(result.c_str());
 	}
-	// new rule: TODO fix it.
-	| postfix_expression '(' argument_expression_list ')' OR_ON_ERROR compound_statement {
-	    if(failable_funcs.find($1) == failable_funcs.end()) {
-    	    yyerror("or_on_error can only be used failable functions.");
-	    } else {
-    	    $$ = join_strdup("__tmp_result_var_", str(suffix_index_decl));
-    	    suffix_index_decl++;
-    	    call_expressions.push_back(CallExpression($1, $3));
+	// new rule:
+	| expression OR_ON_ERROR assignment_expression {
+	    string result;
+	    BOOST_FOREACH(CallExpression call_expression, call_expressions) {
+	        string tmp_result_var = "__tmp_result_var_" + lexical_cast<string>(suffix_index_use);
+	        string tmp_rc_var = "__tmp_rc_var_" + lexical_cast<string>(suffix_index_use);
+	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
+	               + "int " + tmp_rc_var + " = "
+	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
+	               + "if (" + tmp_rc_var + " != 0) {\n"
+                   + tmp_result_var + " = " + $3 + ";"
+	               + "}\n";
+	        suffix_index_use++;
 	    }
+	    result += strdup($1);
+	    call_expressions.clear();
+	    $$ = strdup(result.c_str());
+	}
+	// new rule:
+	| expression OR_ON_ERROR jump {
+	    string result;
+	    BOOST_FOREACH(CallExpression call_expression, call_expressions) {
+	        string tmp_result_var = "__tmp_result_var_" + lexical_cast<string>(suffix_index_use);
+	        string tmp_rc_var = "__tmp_rc_var_" + lexical_cast<string>(suffix_index_use);
+
+	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
+	               + "int " + tmp_rc_var + " = "
+	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
+	               + "if (" + tmp_rc_var + " != 0) {\n"
+                   + $3->eval() + ";"     
+	               + "}\n";
+	        suffix_index_use++;
+	    }
+	    result += strdup($1);
+	    call_expressions.clear();
+	    $$ = strdup(result.c_str());
 	}
 	;
 
