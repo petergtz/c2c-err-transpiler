@@ -30,6 +30,7 @@ int line = 1;
 
 "can_fail"      { count(); return CAN_FAIL; }
 "fails_with"    { count(); return FAILS_WITH; }
+"fail_with"    { count(); return FAIL_WITH; }
 
 
 "auto"			{ count(); return(AUTO); }

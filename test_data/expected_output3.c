@@ -13,7 +13,6 @@ StdError* f4(int p1, char p2, char* __this_result)
         __tmp_result_var_0 = 3;
     }
     c = __tmp_result_var_0;
-
     char d;
     char __tmp_result_var_1;
     int __tmp_rc_var_1 = f3(1, 2, &__tmp_result_var_1);
@@ -22,7 +21,6 @@ StdError* f4(int p1, char p2, char* __this_result)
         return 0;
     }
     d = __tmp_result_var_1;
-
     char e;
     char __tmp_result_var_2;
     int __tmp_rc_var_2 = f3(1, 2, &__tmp_result_var_2);
@@ -32,7 +30,6 @@ StdError* f4(int p1, char p2, char* __this_result)
         return __this_error;
     }
     e = __tmp_result_var_2;
-
-    return 2;
+    *__this_result = 2;
+    return 0;
 }
-
