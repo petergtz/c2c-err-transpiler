@@ -6,8 +6,9 @@ full: test
 
 test: build
 	@echo "Running test cases..."
-#	@./run_test.sh test_data/test_input1.c test_data/expected_output1.c
+	@./run_test.sh test_data/test_input1.c test_data/expected_output1.c
 	@./run_test.sh test_data/test_input3.c test_data/expected_output3.c
+	@./run_test.sh test_data/test_input4.c test_data/expected_output4.c
 	@echo "Done"
 
 build: c2c

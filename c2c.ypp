@@ -578,7 +578,7 @@ block_item
 expression_statement
 	: ';' { $$ = strdup(";"); }
 	| expression ';' {
-	    string result;
+        string result;
 	    BOOST_FOREACH(CallExpression call_expression, call_expressions) {
 	        string tmp_result_var = "__tmp_result_var_" + lexical_cast<string>(suffix_index_use);
 	        string tmp_rc_var = "__tmp_rc_var_" + lexical_cast<string>(suffix_index_use);
@@ -586,6 +586,7 @@ expression_statement
 	               + "int " + tmp_rc_var + " = "
 	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
 	               + "if (" + tmp_rc_var + " != 0) {\n"
+	               + "exit(1);\n"
                    + "}\n";
 	        suffix_index_use++;
 	    }
@@ -627,6 +628,28 @@ expression_statement
 	        suffix_index_use++;
 	    }
 	    result += strdup($1);
+	    call_expressions.clear();
+	    $$ = strdup(result.c_str());
+	}
+	// new rule:
+	| expression OR_ON_ERROR compound_statement {
+	    string result;
+	    BOOST_FOREACH(CallExpression call_expression, call_expressions) {
+	        string tmp_result_var = "__tmp_result_var_" + lexical_cast<string>(suffix_index_use);
+	        string tmp_rc_var = "__tmp_rc_var_" + lexical_cast<string>(suffix_index_use);
+
+	        result += failable_funcs[call_expression.postfix_expression] + " " + tmp_result_var + ";\n" 
+	               + "int " + tmp_rc_var + " = "
+	               + call_expression.postfix_expression + "(" + call_expression.argument_expression_list + ", &" + tmp_result_var +");\n"
+	               + "if (" + tmp_rc_var + " != 0) {\n"
+                   + $3->eval() + ";"     
+	               + "}\n";
+	        suffix_index_use++;
+	    }
+	    result += strdup($1);
+	    if (failable_funcs[call_expressions.back().postfix_expression]->declaration_specifiers.type != "void") {
+	        yyerror("or_on_error with a compound statement can only be used with a function that is void.");
+	    }
 	    call_expressions.clear();
 	    $$ = strdup(result.c_str());
 	}
@@ -680,14 +703,13 @@ function_definition
 	    $$ = join_strdup($1->full, " ", $2, $3);
 	}
 // new rule:
-	| declaration_specifiers function_declarator fail_specifier { current_fails_with_type = $3->error_struct; } compound_statement { 
+	| declaration_specifiers function_declarator fail_specifier { current_fails_with_type = $3->error_struct ? $3->error_struct : ""; } compound_statement { 
 	    if ($3->error_struct) {
 	        $$ = join_strdup($1->storage_class, $3->error_struct, "* ", $2->to_string($1->type), $5);
 	    } else {
 	        $$ = join_strdup($1->storage_class, "int ", $2->to_string($1->type),  $5);
 	    }
         failable_funcs[$2->direct_function_declarator->direct_declarator] = $1->type;
-        
 	    delete $1; delete $2; delete $3; free($5);
 	}
 	;
